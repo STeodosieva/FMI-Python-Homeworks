@@ -1,0 +1,201 @@
+import uuid
+import datetime
+import math
+
+    
+class UserDoesNotExistError(Exception):
+    pass
+
+
+class UserAlreadyExistsError(Exception):
+    pass
+
+
+class UsersNotConnectedError(Exception):
+    pass
+
+
+class Post:
+    def __init__(self, author, content):
+        self.author = author
+        self.published_at = datetime.datetime.now()
+        self.content = content
+
+    def __str__(self):
+        return ("Post by {} published at {} : {}".
+                format(self.author, self.published_at, self.content))
+
+    
+class User:
+    def __init__(self, full_name):
+        self.full_name = full_name
+        self.uuid = uuid.uuid4()
+        self.posts_counter = 0;
+        self.posts = []
+        self.followers = []
+        
+    def add_post(self, post_content):
+        new_post = Post(self.uuid, post_content)
+        if self.posts_counter < 50:
+            self.posts.append(new_post)
+            self.posts_counter += 1
+        else:
+            del self.posts[0]
+            self.posts.append(new_post)
+
+    def get_post(self):
+        index = 0
+        while index < self.posts_counter:
+            yield self.posts[index]
+            index += 1
+
+
+class SocialGraph:
+    def __init__(self):
+        self.graph = {}        
+
+    def add_user(self, user):
+        if not user.uuid in self.graph.keys():
+            self.graph[user.uuid] = user
+        else:
+            raise UserAlreadyExistsError
+
+    def get_user(self, user_uuid):
+        if user_uuid in self.graph.keys():
+            return self.graph[user_uuid]
+        else:
+            raise UserDoesNotExistError
+
+    def delete_user(self, user_uuid):
+        if user_uuid in self.graph.keys():
+            user = self.get_user(user_uuid)
+            for current_user_uuid in self.following(user_uuid):
+                self.unfollow(user_uuid, current_user_uuid)
+            user.followers = []
+            del self.graph[user_uuid]
+        else:
+            raise UserDoesNotExistError
+
+    def follow(self, follower, followee):
+        if not follower in self.get_user(followee).followers:
+            self.get_user(followee).followers.append(follower)
+        else:
+            pass
+
+    def unfollow(self, follower, followee):
+        followers_of_followee = self.get_user(followee).followers
+        if follower in followers_of_followee:
+            index_to_delete = followers_of_followee.index(follower)
+            del followers_of_followee[index_to_delete]
+        else:
+            pass
+
+    def is_following(self, follower, followee):
+        if follower in self.graph.keys() and followee in self.graph.keys():
+            if follower in self.get_user(followee).followers:
+                return True
+            return False
+        else:
+            raise UserDoesNotExistError
+
+    def followers(self, user_uuid):
+        if user_uuid in self.graph.keys():
+            user = self.get_user(user_uuid)
+            return set(user.followers)
+        else:
+            raise UserDoesNotExistError
+
+    def get_all_users(self):
+        return list(self.graph.values())
+
+    def following(self, user_uuid):
+        if user_uuid in self.graph.keys():
+            index = 0
+            user_followings = set()
+            all_users = self.get_all_users()
+            for index in range(len(all_users)):
+                if user_uuid in all_users[index].followers:
+                    user_followings.add(all_users[index].uuid)
+            return user_followings
+        else:
+            raise UserDoesNotExistError
+
+    def friends(self, user_uuid):
+        if user_uuid in self.graph.keys():
+            friends_of_user = set()
+            index = 0
+            user = self.get_user(user_uuid)
+            for index in range(len(user.followers)):
+                if user_uuid in self.get_user(user.followers[index]).followers:
+                    friends_of_user.add(user.followers[index])
+            return friends_of_user
+        else:
+            raise UserDoesNotExistError
+
+    def max_distance(self, user_uuid):
+        distance = math.inf
+        if not self.following(user_uuid):
+            return distance
+        min_dist_to_all_users = []
+        for every_user in self.get_all_users():
+            try:
+                min_dist_to_all_users.append(self.min_distance(user_uuid, every_user.uuid))
+            except:
+                pass
+        min_dist_to_all_users = [distance for distance in min_dist_to_all_users
+                                 if distance != math.inf]
+        return max(min_dist_to_all_users)
+
+    def min_distance(self, from_user_uuid, to_user_uuid):
+        current_min_distance = 0
+        distance = 0
+        distances = []
+        if from_user_uuid is to_user_uuid:
+            return 0
+        if not self.following(from_user_uuid):
+            return math.inf
+        if to_user_uuid in self.following(from_user_uuid):
+            distance = 1
+            return distance
+        if not to_user_uuid in self.following(from_user_uuid):
+            for current_user_uuid in list(self.following(from_user_uuid)):
+                distance = self.min_distance(current_user_uuid, to_user_uuid)
+                distance += 1
+                distances.append(distance)
+        for dist in distances:
+            if not dist == math.inf:
+                return min(distances)
+        raise UsersNotConnectedError
+
+    def list_of_nth_layer_followings(self, user_uuid, n):
+        list_of_followings = []
+        if n is 1:
+            list_of_followings = list(self.following(user_uuid))
+            return list_of_followings
+        list_of_followings = [self.list_of_nth_layer_followings(user, n - 1)
+                              for user in self.following(user_uuid)]
+        return list_of_lists_to_list(list_of_followings)
+
+    def nth_layer_followings(self, user_uuid, n):
+        if user_uuid in self.graph.keys():
+            followings = self.list_of_nth_layer_followings(user_uuid, n)
+            return set(followings)
+        else:
+            raise UserDoesNotExistError
+    
+    def generate_feed(self, user_uuid, offset=0, limit=10):
+        if user_uuid in self.graph.keys():
+            user_posts = []
+            for follower in self.following(user_uuid):
+                user_posts.extend(self.get_user(follower).posts)
+            sorted_posts = sorted(user_posts,
+                                  key = lambda post : post.published_at, reverse=True)
+            if limit > len(sorted_posts):
+                return sorted_posts[offset:]
+            return sorted_posts[offset : offset + limit]
+        else:
+            raise UserDoesNotExistError
+
+
+def list_of_lists_to_list(list_of_lists):
+        return [item for sublist in list_of_lists for item in sublist]
