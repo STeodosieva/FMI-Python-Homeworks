@@ -1,0 +1,201 @@
+def create_constant(value):
+    return Constant(value)
+
+
+def create_variable(name):
+    return Variable(name)
+
+
+def create_operator(symbol, function):
+    return Binary_operator(symbol, function)
+
+
+def create_expression(expression_structure):
+    return Expression(expression_structure)
+
+
+class Operations:
+    def __add__(self, other):
+        plus = create_operator('+', lambda lhs, rhs: lhs + rhs)
+        if (isinstance(other, Constant) or isinstance(other, Variable)
+                                        or isinstance(other, Expression)):
+            return Expression((self, plus, other))
+        if isinstance(other, int):
+            return Expression((self, plus, Constant(other)))
+
+    def __radd__(self, other):
+        plus = create_operator('+', lambda lhs, rhs: lhs + rhs)
+        if (isinstance(other, Constant) or isinstance(other, Variable)
+                                        or isinstance(other, Expression)):
+            return Expression((other, plus, self))
+        if isinstance(other, int):
+            return Expression((Constant(other), plus, self))
+
+    def __sub__(self, other):
+        minus = create_operator('-', lambda lhs, rhs: lhs - rhs)
+        if (isinstance(other, Constant) or isinstance(other, Variable)
+                                        or isinstance(other, Expression)):
+            return Expression((self, minus, other))
+        if isinstance(other, int):
+            return Expression((self, minus, Constant(other)))
+
+    def __rsub__(self, other):
+        minus = create_operator('-', lambda lhs, rhs: lhs - rhs)
+        if (isinstance(other, Constant) or isinstance(other, Variable)
+                                        or isinstance(other, Expression)):
+            return Expression((other, minus, self))
+        if isinstance(other, int):
+            return Expression((Constant(other), minus, self))
+
+    def __mul__(self, other):
+        times = create_operator('*', lambda lhs, rhs: lhs * rhs)
+        if (isinstance(other, Constant) or isinstance(other, Variable)
+                                        or isinstance(other, Expression)):
+            return Expression((self, times, other))
+        if isinstance(other, int):
+            return Expression((self, times, Constant(other)))
+
+    def __rmul__(self, other):
+        times = create_operator('*', lambda lhs, rhs: lhs * rhs)
+        if (isinstance(other, Constant) or isinstance(other, Variable)
+                                        or isinstance(other, Expression)):
+            return Expression((other, times, self))
+        if isinstance(other, int):
+            return Expression((Constant(other), times, self))
+
+    def __truediv__(self, other):
+        div = create_operator('/', lambda lhs, rhs: lhs / rhs)
+        if (isinstance(other, Constant) or isinstance(other, Variable)
+                                        or isinstance(other, Expression)):
+            return Expression((self, div, other))
+        if isinstance(other, int):
+            return Expression((self, div, Constant(other)))
+
+    def __rtruediv__(self, other):
+        div = create_operator('/', lambda lhs, rhs: lhs / rhs)
+        if (isinstance(other, Constant) or isinstance(other, Variable)
+                                        or isinstance(other, Expression)):
+            return Expression((other, div, self))
+        if isinstance(other, int):
+            return Expression((Constant(other), div, self))
+    
+
+class Constant(Operations):
+    def __init__(self, value):
+        self.value = value
+        
+    def __str__(self):
+        return str(self.value)
+    
+    def evaluate(self):
+        return self.value
+
+   
+class Variable(Operations):
+    def __init__(self, name):
+        self.name = name
+        
+    def __str__(self):
+        return str(self.name)
+    
+    def evaluate(self, **kwargs):
+        keys = kwargs.keys()
+        return [kwargs[key] for key in keys if key == self.name][0]
+        
+    
+class Binary_operator:
+    def __init__(self, symbol, function):
+        self.symbol = symbol
+        self.function = function
+
+    def priority(self):
+        if self.symbol == '+' or self.symbol == '-':
+            priority = 2
+        if self.symbol == '*' or self.symbol == '/':
+            priority = 1
+        return priority
+
+    def __str__(self):
+        return str(self.symbol)
+
+
+class Expression(Operations):
+    def __init__(self, expression_structure):
+        self.expression_structure = expression_structure
+
+    def infix_to_postfix(self):
+        stack = []
+        postfix_result = []
+        expr = self.expression_structure
+        i = 0
+        stack.append('(')
+        while(i < len(expr)):
+            if isinstance(expr[i], Constant) or isinstance(expr[i], Variable):
+                postfix_result.append(expr[i])
+                i += 1
+            elif isinstance(expr[i], Binary_operator):
+                top_of_stack = stack.pop()
+                while(top_of_stack != '('
+                      and top_of_stack.priority() < expr[i].priority()):
+                    postfix_result.append(top_of_stack)
+                    top_of_stack = stack.pop()
+                stack.append(top_of_stack)
+                stack.append(expr[i])
+                i += 1            
+            elif isinstance(expr[i], tuple):
+                new_expr = create_expression(expr[i])
+                postfix_result = postfix_result + new_expr.infix_to_postfix()
+                i += 1
+        top_of_stack = stack.pop()
+        while(top_of_stack != '('):
+            postfix_result.append(top_of_stack)
+            top_of_stack = stack.pop()
+        return postfix_result
+
+    def evaluate(self, **variables):
+        return evaluate_postfix(self.infix_to_postfix(), **variables)
+
+    @property
+    def variable_names(self):
+        expr_list = self.infix_to_postfix()
+        variables = set()
+        for element in expr_list:
+            if isinstance(element, Variable):
+                variables.add(str(element))
+        return tuple(variables)
+
+    import string    
+    def __str__(self):
+        expr = self.expression_structure
+        to_string = []
+        for i in range(len(expr)):
+            if (isinstance(expr[i], Constant) or isinstance(expr[i], Variable)
+                or isinstance(expr[i], Binary_operator)):
+                to_string.append(str(expr[i]))
+            if isinstance(expr[i], tuple):
+                new_expr = create_expression(expr[i])
+                to_string = to_string + list(new_expr.__str__())
+        return '(' + ''.join(to_string) + ')'
+    
+
+def evaluate_postfix(expr_list, **variables):
+        i = 0
+        while(i < len(expr_list)):
+            while not isinstance(expr_list[i], Binary_operator):
+                i += 1
+            if isinstance(expr_list[i - 2], Constant):
+                left_value = expr_list[i - 2].evaluate()
+            elif isinstance(expr_list[i - 2], Variable):
+                left_value = expr_list[i - 2].evaluate(**variables)
+            else:
+                left_value = expr_list[i - 2]
+            if isinstance(expr_list[i - 1], Constant):
+                right_value = expr_list[i - 1].evaluate()
+            elif isinstance(expr_list[i - 1], Variable):
+                right_value = expr_list[i - 1].evaluate(**variables)
+            else:
+                right_value = expr_list[i - 1]
+            expr_list[i - 2] = expr_list[i].function(left_value, right_value)
+            del expr_list[i - 1], expr_list[i - 1]
+            i = i - 1
+        return expr_list[0]  
